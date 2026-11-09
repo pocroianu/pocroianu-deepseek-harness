@@ -666,7 +666,8 @@ it('keeps cancellation authoritative without reopening WebUI after a delayed exc
   expect(await f.account.getState()).toMatchObject({ status: 'signed-out', attempt: { phase: 'cancelled' } })
 })
 
-it.each(['https://example.com', 'http://example.com', 'http://127.0.0.1.evil.test',
+// A bare remote HTTPS origin is accepted and mapped to the Host loopback callback (tested below).
+it.each(['http://example.com', 'http://127.0.0.1.evil.test',
   'http://localhost', 'http://127.0.0.1', 'http://[::1]', 'http://localhost:0', 'http://localhost:65536',
   'http://user@localhost', 'http://localhost/path', 'http://localhost/?x=1', 'http://localhost/#x', 'invalid'])
 ('rejects unsupported callback origin %s before starting authorization', async (origin) => {
