@@ -340,8 +340,11 @@
       name: '@deepseek-ai/dsh-client-ui-chat'
 
     # Official occupants for the sidebar brand slots and the home whale frame layer.
+    # Disabled in the Pocroianu Harness fork: upstream's brand guidelines reserve
+    # the official DeepSeek mark and artwork.
     - id: ui-brand-official
       name: '@deepseek-ai/dsh-client-ui-brand-official'
+      disabled: true
 
     - id: ui-attachment
       name: '@deepseek-ai/dsh-client-ui-attachment'

@@ -23,7 +23,6 @@ concurrency:
 env:
   NODE_VERSION: '24'
   DSH_TELEMETRY_DISABLED: '1'
-  DSH_CLIENT_TITLE: Pocroianu Harness
 
 jobs:
   build:
@@ -68,8 +67,11 @@ jobs:
       - name: Prepare bubblewrap (unrestrict userns)
         run: bash scripts/prepare-ci-bubblewrap.sh
 
+      # Release packing requires the official client profile; in this fork it
+      # sets the "Pocroianu Harness" title and the web profile disables the
+      # upstream official brand artwork.
       - name: Build
-        run: pnpm run build
+        run: pnpm run build:official
 
       # Standard runners are smaller than upstream's CI pools; Git- and
       # subprocess-heavy tests need more than vitest's default 5 s.
