@@ -63,11 +63,18 @@ jobs:
       - name: Install (immutable)
         run: pnpm install --frozen-lockfile
 
+      # Sandboxed command tests need bubblewrap with unprivileged user
+      # namespaces, which Ubuntu 24.04's AppArmor policy restricts by default.
+      - name: Prepare bubblewrap (unrestrict userns)
+        run: bash scripts/prepare-ci-bubblewrap.sh
+
       - name: Build
         run: pnpm run build
 
+      # Standard runners are smaller than upstream's CI pools; Git- and
+      # subprocess-heavy tests need more than vitest's default 5 s.
       - name: Unit tests
-        run: pnpm run test
+        run: pnpm run test --testTimeout=30000 --hookTimeout=30000
 
       - name: Pack tarballs
         run: |
