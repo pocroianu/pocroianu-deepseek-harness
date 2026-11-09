@@ -1,5 +1,6 @@
 /** Host HTTP bridge for browser-client RPC. */
 import type { Context } from '@deepseek-ai/cordis'
+import { readFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-attachment'
@@ -105,6 +106,14 @@ export interface ConnectionConfig {
   trustedHosts?: string[]
   /** Absolute browser and API cookie lifetime in days. Default: 30. */
   cookieMaxAgeDays?: number
+  /**
+   * File holding the shared secret an authenticating reverse proxy sends in
+   * the `x-dsh-proxy-auth` header after its own login (at least 32 bytes,
+   * surrounding whitespace ignored). Unset disables proxy login. Defaults to
+   * the `DSH_TRUSTED_PROXY_SECRET_FILE` environment variable. Use a file, not
+   * an environment value, so agent subprocesses do not inherit the secret.
+   */
+  trustedProxySecretFile?: string
   /** Maximum buffered JSON body for every `/api` request. Default: 300 MiB. */
   maxRequestBodyBytes?: number
 }
@@ -113,8 +122,15 @@ export const Config: z<ConnectionConfig> = z.object({
   recovery: ConnectionRecoveryConfigSchema.default({}),
   trustedHosts: z.array(String).default([]),
   cookieMaxAgeDays: z.natural().min(1).default(30),
+  trustedProxySecretFile: z.string().required(false),
   maxRequestBodyBytes: z.natural().min(1).default(DEFAULT_MAX_REQUEST_BODY_BYTES),
 })
+
+/** Read the optional trusted-proxy secret file; an unreadable or short file fails plugin load. */
+async function readTrustedProxySecret(path: string | undefined): Promise<string | undefined> {
+  if (path === undefined || path === '') return undefined
+  return (await readFile(path, 'utf8')).trim()
+}
 
 /**
  * Provides carrier-neutral RPC and Fetch registries. When `webServer` is
@@ -136,7 +152,9 @@ export async function apply(ctx: Context, config?: ConnectionConfig): Promise<vo
   const connection = new HostConnectionService(
     ctx,
     trustedHosts,
-    await BrowserAuth.create(ctx.root, ctx.credentials, cookieMaxAgeDays),
+    await BrowserAuth.create(ctx.root, ctx.credentials, cookieMaxAgeDays, await readTrustedProxySecret(
+      config?.trustedProxySecretFile ?? process.env.DSH_TRUSTED_PROXY_SECRET_FILE,
+    )),
   )
   ctx.inject(['webServer'], (webCtx) => {
     assertImageBodyCapacity(webCtx, maxRequestBodyBytes)

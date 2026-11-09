@@ -368,3 +368,55 @@ describe('BrowserAuth', () => {
       .rejects.toThrow(/safe timestamp range/u)
   })
 })
+
+describe('trusted proxy login', () => {
+  const PROXY_SECRET = 'p'.repeat(40)
+
+  function proxied(url: string, assertion: string | undefined, method = 'GET', cookie?: string): ConnectionIndexRequest {
+    return {
+      method,
+      url,
+      headers: {
+        host: 'harness.example',
+        ...assertion === undefined ? {} : { 'x-dsh-proxy-auth': assertion },
+        ...cookie === undefined ? {} : { cookie },
+      },
+    }
+  }
+
+  it('mints the browser cookie for a matching proxy assertion and redirects back to the same index path', async () => {
+    const auth = await BrowserAuth.create({}, credentials(new RecordCredentials()), 30, PROXY_SECRET)
+    for (const [path, location] of [['/', './'], ['/chat/abc?x=1', './abc?x=1']] as const) {
+      const res = response()
+      expect(auth.authorizeIndex(proxied(path, PROXY_SECRET), res.value, false)).toBe(false)
+      expect(res.state.status).toBe(303)
+      expect(res.state.headers?.location).toBe(location)
+      const cookie = res.state.headers?.['set-cookie']?.split(';', 1)[0]
+      if (cookie === undefined) throw new Error('proxy login did not set a cookie')
+      expect(auth.isAuthenticated(proxied('/', undefined, 'GET', cookie))).toBe(true)
+      expect(auth.authorizeIndex(proxied(path, undefined, 'GET', cookie), response().value)).toBe(true)
+    }
+  })
+
+  it('refuses a wrong, missing, or non-GET assertion, and ignores the header when unconfigured', async () => {
+    const auth = await BrowserAuth.create({}, credentials(new RecordCredentials()), 30, PROXY_SECRET)
+    const unconfigured = await createAuth(new RecordCredentials())
+    for (const [subject, candidate] of [
+      [auth, proxied('/', undefined)],
+      [auth, proxied('/', 'q'.repeat(40))],
+      [auth, proxied('/', PROXY_SECRET.slice(1))],
+      [auth, proxied('/', PROXY_SECRET, 'HEAD')],
+      [unconfigured, proxied('/', PROXY_SECRET)],
+    ] as const) {
+      const denied = response()
+      expect(subject.authorizeIndex(candidate, denied.value)).toBe(false)
+      expect(denied.state.status).toBe(401)
+      expect(denied.state.headers?.['set-cookie']).toBeUndefined()
+    }
+  })
+
+  it('rejects a short proxy secret at activation', async () => {
+    await expect(BrowserAuth.create({}, credentials(new RecordCredentials()), 30, 'short'))
+      .rejects.toThrow(/at least 32 bytes/u)
+  })
+})
