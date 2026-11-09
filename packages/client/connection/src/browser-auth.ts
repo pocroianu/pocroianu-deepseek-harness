@@ -15,6 +15,10 @@ const AUTH_RECORD_KEY = credentialKey('client-connection', 'browser-session')
 const DAY_MILLISECONDS = 24 * 60 * 60 * 1000
 const SECRET_BYTES = 32
 const TOKEN_QUERY = 'token'
+/** Header a trusted authenticating reverse proxy sets after its own login succeeds. */
+export const PROXY_AUTH_HEADER = 'x-dsh-proxy-auth'
+/** Minimum proxy assertion secret length in bytes. */
+export const PROXY_SECRET_MIN_BYTES = 32
 const COOKIE_PREFIX = 'dsh-auth-'
 const COOKIE_PAYLOAD_VERSION = 1
 const STORED_SECRET_VERSION = 1
@@ -211,7 +215,11 @@ export class BrowserAuth {
     processOwner: object,
     private readonly secret: Buffer,
     maxAgeDays: number,
+    private readonly proxySecret?: string,
   ) {
+    if (proxySecret !== undefined && Buffer.byteLength(proxySecret, 'utf8') < PROXY_SECRET_MIN_BYTES) {
+      throw new Error(`client-connection: trusted proxy secret must be at least ${String(PROXY_SECRET_MIN_BYTES)} bytes`)
+    }
     this.launchToken = processLaunchToken(processOwner)
     this.maxAgeMilliseconds = maxAgeDays * DAY_MILLISECONDS
     if (!Number.isSafeInteger(this.maxAgeMilliseconds)
@@ -226,14 +234,18 @@ export class BrowserAuth {
    * @param processOwner - root application context retaining one token across Connection reloads.
    * @param credentials - persistent credential provider for the Web profile.
    * @param maxAgeDays - positive absolute browser-cookie lifetime in days.
+   * @param proxySecret - optional shared secret an authenticating reverse proxy
+   * sends in {@link PROXY_AUTH_HEADER} after its own login; a matching index
+   * request mints the same browser cookie as the launch token.
    * @returns initialized authentication owner with the process owner's launch token.
    */
   static async create(
     processOwner: object,
     credentials: CredentialProvider,
     maxAgeDays: number,
+    proxySecret?: string,
   ): Promise<BrowserAuth> {
-    return new BrowserAuth(processOwner, await initializeSecret(credentials), maxAgeDays)
+    return new BrowserAuth(processOwner, await initializeSecret(credentials), maxAgeDays, proxySecret)
   }
 
   /**
@@ -300,8 +312,35 @@ export class BrowserAuth {
       return false
     }
     if (this.isAuthenticated(req, secure)) return true
+    const authority = requestAudience(req.headers, secure)
+    if (req.method === 'GET' && authority !== undefined && this.proxyAsserted(req)) {
+      // Directory-relative redirect back to the same index path, now carrying
+      // the cookie, so a prefix-stripping proxy mount keeps working.
+      const segment = url.pathname.slice(url.pathname.lastIndexOf('/') + 1)
+      res.writeHead(303, {
+        'cache-control': 'no-store',
+        'location': `./${segment}${url.search}`,
+        'referrer-policy': 'no-referrer',
+        'set-cookie': this.browserCookie(authority, secure),
+      })
+      res.end()
+      return false
+    }
     this.writeUnauthorized(req, res)
     return false
+  }
+
+  private proxyAsserted(req: ConnectionIndexRequest): boolean {
+    if (this.proxySecret === undefined) return false
+    const asserted = header(req.headers, PROXY_AUTH_HEADER)
+    return asserted !== undefined && tokenMatches(asserted, this.proxySecret)
+  }
+
+  private browserCookie(authority: string, secure: boolean): string {
+    const issuedAt = Date.now()
+    const expiresAt = issuedAt + this.maxAgeMilliseconds
+    const value = encodeCookie({ version: COOKIE_PAYLOAD_VERSION, authority, issuedAt, expiresAt }, this.secret)
+    return sessionCookie(cookieName(authority), value, expiresAt, Math.floor(this.maxAgeMilliseconds / 1000), secure)
   }
 
   /**
