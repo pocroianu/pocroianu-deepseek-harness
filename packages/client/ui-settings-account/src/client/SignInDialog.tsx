@@ -90,8 +90,8 @@ export function SignInDialog({ account, colorScheme, start, cancel, close, useAp
       {waiting && remote && phase === 'waiting-browser' && <form className={css.remote}
         onSubmit={(event) => { event.preventDefault(); submitPasted() }}>
         <p className={css.remoteHint}>{t('remoteHint')}</p>
-        <Input className={css.remoteInput} value={pasted} placeholder={t('remotePlaceholder')}
-          aria-label={t('remoteSubmit')} aria-invalid={pastedInvalid || undefined} spellCheck={false} autoComplete="off"
+        <Input className={css.remoteInput as string} value={pasted} placeholder={t('remotePlaceholder')}
+          aria-label={t('remoteSubmit')} aria-invalid={pastedInvalid} spellCheck={false} autoComplete="off"
           onChange={(event) => { setPasted(event.target.value); setPastedInvalid(false) }} />
         {pastedInvalid && <p className={css.remoteError} role="alert">{t('remoteInvalid')}</p>}
         <Button type="submit" variant="outline" className={css.secondaryButton} disabled={pasted.trim() === ''}>
