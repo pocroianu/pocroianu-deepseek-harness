@@ -256,3 +256,19 @@ export function loginOrigin(value: string): string {
   }
   return `${url.protocol}//${url.hostname}:${Number(explicitPort)}`
 }
+
+/**
+ * Recognize the bare HTTPS origin of a remote browser (a Web UI served behind
+ * a reverse proxy). Such a browser cannot receive the loopback redirect, so
+ * the attempt keeps a loopback `redirect_uri` on the Host's own port and the
+ * browser hands the redirected callback URL back to that Host route itself.
+ * @param value - callback origin supplied by the authenticated initiating client.
+ * @returns true for `https://host[:port]` without credentials, path, query or fragment.
+ */
+export function isRemoteBrowserOrigin(value: string): boolean {
+  let url: URL
+  try { url = new URL(value) } catch { return false }
+  return url.protocol === 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+    && !url.username && !url.password && url.pathname === '/' && !url.search && !url.hash
+    && /^https:\/\/[^/?#]+\/?$/i.test(value)
+}

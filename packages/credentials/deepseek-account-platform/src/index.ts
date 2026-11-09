@@ -12,7 +12,7 @@ import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import type { AuthorizationSession } from '@deepseek-ai/dsh-authorization'
 import { profile, readAccountDetail, readUnnotifiedBonuses, sendBonusNotified } from './details.ts'
 import { revokeAccount, type LogoutRetryPolicy } from './logout.ts'
-import { AccountUnauthorizedError, PlatformAuthError, platformHeaders, platformOrigin, browserUrl, requestPlatform, initialization, exchange, loginOrigin } from './protocol.ts'
+import { AccountUnauthorizedError, PlatformAuthError, platformHeaders, platformOrigin, browserUrl, requestPlatform, initialization, exchange, isRemoteBrowserOrigin, loginOrigin } from './protocol.ts'
 
 const KEY = credentialKey('deepseek-account-platform', 'default')
 const DEVICE = credentialKey('deepseek-account-platform', 'device')
@@ -401,7 +401,7 @@ export class PlatformAccount extends DeepSeekAccount {
 
   override async startSignIn(client: AccountClientMetadata, callbackOrigin: string, loginSource: 'web' | 'desktop'): Promise<AccountView> {
     if (this.removing !== undefined) await this.removing
-    const origin = loginOrigin(callbackOrigin)
+    const origin = this.callbackOrigin(callbackOrigin)
     if (this.closed) throw new PlatformAuthError('protocol')
     if (this.attempt !== undefined && ['initializing', 'waiting-browser', 'exchanging', 'committing'].includes(this.attempt.view.phase)) {
       return this.getState()
@@ -445,6 +445,19 @@ export class PlatformAccount extends DeepSeekAccount {
     })
     this.changed()
     return this.getState()
+  }
+
+  /**
+   * Loopback origin used as the OAuth `redirect_uri`. A remote HTTPS browser
+   * origin maps to the Host listener's own loopback port: the platform only
+   * redirects to loopback, so that browser hands the redirected URL's query to
+   * this Host's `/oauth/callback` route through its own origin instead.
+   */
+  private callbackOrigin(value: string): string {
+    if (!isRemoteBrowserOrigin(value)) return loginOrigin(value)
+    const port = this.ctx.get('webServer')?.port
+    if (port === undefined || port === 0) throw new PlatformAuthError('protocol')
+    return loginOrigin(`http://127.0.0.1:${String(port)}`)
   }
 
   override async cancelSignIn(id: SignInAttemptId): Promise<AccountView> {
