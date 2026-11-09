@@ -1,0 +1,132 @@
+# Pocroianu Harness fork build. Upstream workflows target DeepSeek's enterprise
+# runner pools and npm publication; they are disabled in this fork. This one
+# builds and tests on standard GitHub runners, packs the npm tarballs locally
+# (nothing is published to npm), verifies a clean install from those tarballs,
+# and on master publishes them as a GitHub release bundle with build provenance.
+# The homelab installs a bundle by exact commit SHA and checksum.
+name: Pocroianu build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NODE_VERSION: '24'
+  DSH_TELEMETRY_DISABLED: '1'
+  DSH_CLIENT_TITLE: Pocroianu Harness
+
+jobs:
+  build:
+    name: Build, test and pack
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    outputs:
+      bundle: ${{ steps.bundle.outputs.name }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v5.0.0
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Configure pnpm store path
+        id: pnpm-store
+        run: |
+          store_root="$HOME/.local/share/pnpm/store"
+          echo "PNPM_CONFIG_STORE_DIR=$store_root" >> "$GITHUB_ENV"
+          echo "path=$(PNPM_CONFIG_STORE_DIR="$store_root" pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-node-${{ env.NODE_VERSION }}-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-node-${{ env.NODE_VERSION }}-pnpm-
+
+      - name: Install (immutable)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Unit tests
+        run: pnpm run test
+
+      - name: Pack tarballs
+        run: |
+          pnpm run release:pack --family dsh --out dist/npm
+          pnpm run release:pack --family vendor --out dist/npm-vendor
+          pnpm --dir native/system run build:ts
+          pnpm --dir native/system/packages/entry pack --pack-destination "$PWD/dist/npm-landlock"
+
+      - name: Verify packed install
+        run: pnpm run release:verify-packed-install --family dsh --from dist/npm --from dist/npm-vendor --from dist/npm-landlock
+
+      - name: Assemble bundle
+        id: bundle
+        run: |
+          name="pocroianu-harness-${GITHUB_SHA::12}"
+          mkdir -p "dist/$name"
+          cp dist/npm/*.tgz dist/npm-vendor/*.tgz dist/npm-landlock/*.tgz "dist/$name/"
+          printf '%s\n' "$GITHUB_SHA" > "dist/$name/COMMIT"
+          (cd "dist/$name" && sha256sum COMMIT *.tgz > SHA256SUMS)
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          (cd dist && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: ${{ steps.bundle.outputs.name }}
+          path: |
+            dist/${{ steps.bundle.outputs.name }}.tar.gz
+            dist/${{ steps.bundle.outputs.name }}.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish release bundle
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: ${{ needs.build.outputs.bundle }}
+          path: dist
+
+      - uses: actions/attest-build-provenance@v4.2.2
+        with:
+          subject-path: dist/${{ needs.build.outputs.bundle }}.tar.gz
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUNDLE: ${{ needs.build.outputs.bundle }}
+        run: |
+          gh release create "build-${GITHUB_SHA::12}" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+            --title "Pocroianu Harness build ${GITHUB_SHA::12}" \
+            --notes "Fork build of ${GITHUB_SHA}. npm tarballs, not published to npm." \
+            "dist/$BUNDLE.tar.gz" "dist/$BUNDLE.tar.gz.sha256"
