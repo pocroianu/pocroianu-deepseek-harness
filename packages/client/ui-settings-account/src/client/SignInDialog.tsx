@@ -1,10 +1,11 @@
 /** Account authorization dialog; errors allow retry after cancelling any active attempt. */
 import { useEffect, useState } from 'react'
-import { Button, IconCloseOutlineRegular, IconLoadingOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconCloseOutlineRegular, IconLoadingOutlineRegular, Input, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AccountSnapshot } from './AccountSection.tsx'
 import type { SignInAttemptId } from '@deepseek-ai/dsh-deepseek-account/types'
 import type { AccountKey } from './locales.ts'
 import { authorizeUrlWithTheme } from './authorize-url.ts'
+import { deliverRemoteCallback, isRemoteBrowser, remoteCallbackPath } from './remote-callback.ts'
 import css from './SignInDialog.module.css'
 
 /** @param props - safe account state, localized copy, and user actions. @returns login dialog. */
@@ -21,8 +22,12 @@ export function SignInDialog({ account, colorScheme, start, cancel, close, useAp
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const [copyResult, setCopyResult] = useState<{ messageKey: 'copiedLink' | 'copyFailed' } | null>(null)
+  const [pasted, setPasted] = useState('')
+  const [pastedInvalid, setPastedInvalid] = useState(false)
+  const remote = typeof window !== 'undefined' && isRemoteBrowser(window.location)
   const attempt = account.view?.attempt
   useEffect(() => { setCopyResult(null) }, [attempt?.id, attempt?.authorizeUrl])
+  useEffect(() => { setPasted(''); setPastedInvalid(false) }, [attempt?.id])
   useEffect(() => {
     if (copyResult === null) return
     const timer = setTimeout(() => { setCopyResult(null) }, 2000)
@@ -59,6 +64,12 @@ export function SignInDialog({ account, colorScheme, start, cancel, close, useAp
       setCopyResult({ messageKey: 'copiedLink' })
     } catch { setCopyResult({ messageKey: 'copyFailed' }) }
   }
+  const submitPasted = () => {
+    const path = remoteCallbackPath(pasted)
+    if (path === undefined) { setPastedInvalid(true); return }
+    setPastedInvalid(false)
+    void deliverRemoteCallback(path).then((accepted) => { if (!accepted) setPastedInvalid(true) }, () => { setPastedInvalid(true) })
+  }
   const title = error ? t('failureTitle') : active ? t('browserTitle') : expired ? t('timeoutTitle') : t('loginTitle')
   return <Modal open headless title={title} onClose={dismiss} className={css.dialog as string}>
     <div className={css.content}>
@@ -76,6 +87,17 @@ export function SignInDialog({ account, colorScheme, start, cancel, close, useAp
       </p> : <p className={css.description}>
         {error ? t(failureKey) : expired ? t('timeoutDescription') : t('loginDescription')}
       </p>}
+      {waiting && remote && phase === 'waiting-browser' && <form className={css.remote}
+        onSubmit={(event) => { event.preventDefault(); submitPasted() }}>
+        <p className={css.remoteHint}>{t('remoteHint')}</p>
+        <Input className={css.remoteInput} value={pasted} placeholder={t('remotePlaceholder')}
+          aria-label={t('remoteSubmit')} aria-invalid={pastedInvalid || undefined} spellCheck={false} autoComplete="off"
+          onChange={(event) => { setPasted(event.target.value); setPastedInvalid(false) }} />
+        {pastedInvalid && <p className={css.remoteError} role="alert">{t('remoteInvalid')}</p>}
+        <Button type="submit" variant="outline" className={css.secondaryButton} disabled={pasted.trim() === ''}>
+          {t('remoteSubmit')}
+        </Button>
+      </form>}
     </div>
     <div className={css.actions}>
       <Button variant="outline" className={css.secondaryButton} disabled={committing || busy}

@@ -675,6 +675,23 @@ it.each(['https://example.com', 'http://example.com', 'http://127.0.0.1.evil.tes
   expect(f.init()).toEqual({})
 })
 
+it('maps a remote HTTPS browser origin to the Host loopback callback and completes through it', async () => {
+  const f = await fixture()
+  await f.account.startSignIn(clientMetadata(), 'https://harness.example.net', 'web')
+  await f.wait('waiting-browser')
+  expect(f.init().redirect_uri).toBe(`${f.callbackOrigin}/oauth/callback`)
+  const response = await fetch(f.callback(), { redirect: 'manual' })
+  expect(response.status).toBe(302)
+  expect(await f.wait('succeeded')).toMatchObject({ status: 'credential-stored' })
+})
+
+it.each(['https://harness.example.net/path', 'https://user@harness.example.net', 'https://harness.example.net/?x=1', 'http://harness.example.net'])
+('still rejects non-origin or plain-HTTP remote callback origin %s', async (origin) => {
+  const f = await fixture()
+  await expect(f.account.startSignIn(clientMetadata(), origin, 'web')).rejects.toThrow('account: protocol')
+  expect(f.init()).toEqual({})
+})
+
 it('normalizes supported loopback callback origins', () => {
   expect(loginOrigin('http://localhost:8080/')).toBe('http://localhost:8080')
   expect(loginOrigin('http://127.0.0.1:8080')).toBe('http://127.0.0.1:8080')

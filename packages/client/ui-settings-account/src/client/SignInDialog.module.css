@@ -18,3 +18,7 @@
 @media (prefers-reduced-motion: reduce) {
   .spinner { animation: none; }
 }
+.remote { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px 24px 0; user-select: text; }
+.remoteHint { margin: 0; font-size: 13px; line-height: 20px; color: var(--dsw-alias-label-secondary); }
+.remoteInput { width: 100%; }
+.remoteError { margin: 0; font-size: 13px; line-height: 20px; color: var(--dsw-alias-state-error-primary); }
