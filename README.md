@@ -1,4 +1,10 @@
-# DeepSeek Harness
+# Pocroianu Harness
+
+Pocroianu Harness is a personal fork of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) by DeepSeek AI. It is not affiliated with or endorsed by DeepSeek. Fork builds come from [`.github/workflows/pocroianu-build.yml`](.github/workflows/pocroianu-build.yml) and are published as GitHub release bundles, not to npm. The upstream README follows.
+
+---
+
+## DeepSeek Harness
 
 English | [中文](README.zh.md)
 

@@ -14,10 +14,15 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+// Holes the fork plugin fills; it leaves the sidebar brand holes declared but empty.
 const HOLES = [
+  'conversation.hero.frame',
+] as const
+
+const DECLARED_HOLES = [
   'sidebar.brand.mark',
   'sidebar.brand.name',
-  'conversation.hero.frame',
+  ...HOLES,
 ] as const
 
 const HERO_HOLE = 'conversation.hero.brand.mark'
@@ -28,7 +33,7 @@ async function bench(declare = true) {
   const slots = ctx.get('slots') as SlotRegistry
   const declareHoles = () => slots.register({
     name: 'root',
-    children: Object.fromEntries([...HOLES, HERO_HOLE].map(name => [name, {
+    children: Object.fromEntries([...DECLARED_HOLES, HERO_HOLE].map(name => [name, {
       kind: name === 'conversation.hero.frame' ? 'hoc' : 'single',
       scope: 'root',
     }])),
@@ -48,6 +53,15 @@ describe('official browser-brand plugin', () => {
 
   it('keeps local sidebar branding and provides the same blank-home feedback', async () => {
     vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'local')
+    const subject = await bench()
+    await subject.ctx.plugin({ inject: [...inject], apply }).await()
+    expect(subject.slots.entries('sidebar.brand.mark')).toHaveLength(0)
+    expect(subject.slots.entries('sidebar.brand.name')).toHaveLength(0)
+    expect(subject.slots.entries('conversation.hero.frame')).toHaveLength(1)
+  })
+
+  it('leaves the sidebar brand slots empty in official fork builds', async () => {
+    vi.stubEnv('DSH_CLIENT_BUILD_PROFILE', 'official')
     const subject = await bench()
     await subject.ctx.plugin({ inject: [...inject], apply }).await()
     expect(subject.slots.entries('sidebar.brand.mark')).toHaveLength(0)

@@ -1,16 +1,20 @@
-/** Official DeepSeek Harness occupants: the profile-gated sidebar brand slots and the home whale frame layer. */
+/**
+ * Pocroianu Harness fork: the home whale frame layer only. Upstream's official
+ * sidebar mark and wordmark are DeepSeek brand assets reserved by upstream's
+ * brand guidelines, so official fork builds leave the sidebar brand slots to
+ * their local fallback. `Brand.tsx` keeps the components for upstream merges.
+ */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { PixelWhale } from './home-whale/PixelWhale.tsx'
-import { OfficialBrandMark, OfficialBrandName } from './Brand.tsx'
 
 /** Required service: the UI slot registry. */
 export const inject = ['slots']
 
 /**
- * Fill official sidebar artwork and frame the blank home with the whale decoration.
+ * Frame the blank home with the whale decoration.
  * @param ctx - Client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -18,10 +22,4 @@ export function apply(ctx: ClientContext): void {
     name: 'conversation.hero.frame',
     id: 'pixel-whale',
   }, PixelWhale))
-  if (process.env.DSH_CLIENT_BUILD_PROFILE !== 'official') return
-  ctx.slots.inject('sidebar.brand.mark', () =>
-    ctx.slots.inject('sidebar.brand.name', function* () {
-      yield ctx.slots.register({ name: 'sidebar.brand.mark' }, OfficialBrandMark)
-      yield ctx.slots.register({ name: 'sidebar.brand.name' }, OfficialBrandName)
-    }))
 }

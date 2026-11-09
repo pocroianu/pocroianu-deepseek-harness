@@ -1,6 +1,6 @@
 {
-  "name": "DeepSeek Harness",
-  "short_name": "DSH",
+  "name": "Pocroianu Harness",
+  "short_name": "Harness",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
